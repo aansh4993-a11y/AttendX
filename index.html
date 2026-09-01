@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Attendance Register</title>
+<meta name="description" content="Track daily attendance and know exactly when you can skip class.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=IBM+Plex+Mono:wght@500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="page-wrap">
+
+  <header class="masthead">
+    <div class="masthead-top">
+      <span class="masthead-index">No. 01</span>
+      <span class="masthead-index">Est. this term</span>
+    </div>
+    <h1 class="masthead-title">Attendance Register</h1>
+    <p class="masthead-sub">Track your attendance. Know when you can skip.</p>
+  </header>
+
+  <!-- ============ CURRENT ATTENDANCE ============ -->
+  <section class="ledger-card" id="current-card">
+    <div class="punch-holes" aria-hidden="true">
+      <span></span><span></span><span></span><span></span><span></span>
+    </div>
+    <div class="ledger-body">
+      <div class="ledger-label">Current standing</div>
+
+      <div class="current-figure-row">
+        <div class="current-figure" id="current-percent" aria-live="polite">0.00%</div>
+        <div class="status-chip" id="status-chip">No records yet</div>
+      </div>
+
+      <div class="progress-track" role="progressbar" aria-label="Attendance progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progress-track">
+        <div class="progress-fill" id="progress-fill"></div>
+        <div class="progress-target" style="left:75%" title="75% required"></div>
+      </div>
+      <div class="progress-scale">
+        <span>0%</span>
+        <span class="progress-target-label">75% required</span>
+        <span>100%</span>
+      </div>
+
+      <div class="stat-line">
+        <div class="stat">
+          <span class="stat-label">Classes attended</span>
+          <span class="stat-value" id="stat-attended">0</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Total classes</span>
+          <span class="stat-value" id="stat-total">0</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Required</span>
+          <span class="stat-value">75%</span>
+        </div>
+      </div>
+
+      <p class="verdict-text" id="verdict-text" aria-live="polite">
+        Add today's attendance below to start tracking.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ FIRST TIME SETUP (shown only if no history) ============ -->
+  <section class="note-card" id="setup-card" hidden>
+    <h2 class="note-title">Starting point</h2>
+    <p class="note-hint">No history found. Enter what you've attended so far — or leave both at 0 to start fresh.</p>
+    <div class="field-grid">
+      <div class="field">
+        <label for="prev-attended">Previous classes attended</label>
+        <input type="number" id="prev-attended" min="0" step="1" value="0" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label for="prev-total">Previous total classes</label>
+        <input type="number" id="prev-total" min="0" step="1" value="0" inputmode="numeric">
+      </div>
+    </div>
+    <p class="field-error" id="setup-error" role="alert"></p>
+    <button class="btn btn-secondary" id="save-setup-btn" type="button">Set starting point</button>
+  </section>
+
+  <!-- ============ TODAY'S ATTENDANCE ============ -->
+  <section class="note-card" id="today-card">
+    <h2 class="note-title">Today's attendance</h2>
+    <div class="field-grid" id="today-form">
+      <div class="field">
+        <label for="today-date">Date</label>
+        <input type="date" id="today-date">
+      </div>
+      <div class="field">
+        <label for="today-attended">Classes attended today</label>
+        <input type="number" id="today-attended" min="0" step="1" inputmode="numeric" placeholder="e.g. 6">
+      </div>
+      <div class="field">
+        <label for="today-held">Total classes held today</label>
+        <input type="number" id="today-held" min="1" step="1" value="8" inputmode="numeric">
+      </div>
+    </div>
+    <p class="field-error" id="today-error" role="alert"></p>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="save-today-btn" type="button">Save today's attendance</button>
+      <button class="btn btn-ghost" id="reset-btn" type="button">Reset</button>
+    </div>
+  </section>
+
+  <!-- ============ ATTENDANCE PLANNER ============ -->
+  <section class="note-card" id="planner-card">
+    <h2 class="note-title">Planner</h2>
+    <p class="note-hint">See what tomorrow could look like, starting from your current standing.</p>
+    <div class="field planner-field">
+      <label for="planner-classes">Classes tomorrow</label>
+      <input type="number" id="planner-classes" min="0" step="1" value="8" inputmode="numeric">
+    </div>
+    <div class="planner-grid" id="planner-grid" aria-live="polite"></div>
+  </section>
+
+  <!-- ============ ATTENDANCE HISTORY ============ -->
+  <section class="ledger-table-card">
+    <div class="ledger-table-head">
+      <h2 class="note-title">Attendance history</h2>
+      <button class="btn btn-danger-ghost" id="clear-history-btn" type="button">Clear history</button>
+    </div>
+
+    <div class="empty-state" id="empty-state">
+      <div class="empty-icon">&#128203;</div>
+      <p>No attendance records yet.</p>
+      <p class="empty-sub">Add today's attendance to start tracking.</p>
+    </div>
+
+    <div class="table-scroll" id="table-wrap" hidden>
+      <table class="history-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Today</th>
+            <th>Held</th>
+            <th>Cum. attended</th>
+            <th>Cum. total</th>
+            <th>Attendance</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="history-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="page-footer">
+    <p>Stored only in this browser — nothing leaves your device.</p>
+  </footer>
+
+</div>
+
+<!-- ============ EDIT RECORD DIALOG ============ -->
+<div class="modal-overlay" id="edit-overlay" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="edit-title">
+    <h2 class="note-title" id="edit-title">Edit record</h2>
+    <div class="field-grid">
+      <div class="field">
+        <label for="edit-date">Date</label>
+        <input type="date" id="edit-date">
+      </div>
+      <div class="field">
+        <label for="edit-attended">Classes attended</label>
+        <input type="number" id="edit-attended" min="0" step="1" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label for="edit-held">Classes held</label>
+        <input type="number" id="edit-held" min="1" step="1" inputmode="numeric">
+      </div>
+    </div>
+    <p class="field-error" id="edit-error" role="alert"></p>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="edit-save-btn" type="button">Save changes</button>
+      <button class="btn btn-ghost" id="edit-cancel-btn" type="button">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ CONFIRM DIALOG (generic) ============ -->
+<div class="modal-overlay" id="confirm-overlay" hidden>
+  <div class="modal-card modal-card-narrow" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
+    <h2 class="note-title" id="confirm-title">Are you sure?</h2>
+    <p id="confirm-message" class="note-hint"></p>
+    <div class="btn-row">
+      <button class="btn btn-danger" id="confirm-ok-btn" type="button">Confirm</button>
+      <button class="btn btn-ghost" id="confirm-cancel-btn" type="button">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="script.js"></script>
+</body>
+</html>
