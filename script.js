@@ -9,14 +9,21 @@ const STORAGE_KEY_BASE = 'attendanceRegister.base';
 const STORAGE_KEY_HISTORY = 'attendanceRegister.history';
 const STORAGE_KEY_TARGET = 'attendanceRegister.target';
 const STORAGE_KEY_THEME = 'attendanceRegister.theme';
+const STORAGE_KEY_TIMETABLE = 'attendanceRegister.timetable';
 const DEFAULT_TARGET = 75;
+const DEFAULT_HELD = 8;
+const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']; // matches Date#getDay() index
+const HEATMAP_CELL = 13;
+const HEATMAP_GAP = 3;
+const HEATMAP_MAX_DAYS = 182; // trailing ~6 months, keeps the grid scrollable but not endless
 const EPS = 1e-9;
 
 /** In-memory application state, mirrored to localStorage. */
 const state = {
   base: { attended: 0, total: 0 },   // starting point before any daily record
   history: [],                       // [{ id, date, attendedToday, classesHeldToday, cumulativeAttended, cumulativeTotal, attendance, statusKind, status }]
-  target: DEFAULT_TARGET             // desired attendance benchmark, e.g. 80
+  target: DEFAULT_TARGET,            // desired attendance benchmark, e.g. 80
+  timetable: null                    // null = flat default; otherwise { sun,mon,tue,wed,thu,fri,sat: number }
 };
 
 let editingId = null;
@@ -43,6 +50,23 @@ const dom = {
 
   themeToggle: el('theme-toggle'),
   themeToggleIcon: el('theme-toggle-icon'),
+
+  ttMon: el('tt-mon'),
+  ttTue: el('tt-tue'),
+  ttWed: el('tt-wed'),
+  ttThu: el('tt-thu'),
+  ttFri: el('tt-fri'),
+  ttSat: el('tt-sat'),
+  ttSun: el('tt-sun'),
+  timetableError: el('timetable-error'),
+  saveTimetableBtn: el('save-timetable-btn'),
+  clearTimetableBtn: el('clear-timetable-btn'),
+
+  heatmapEmpty: el('heatmap-empty'),
+  heatmapScroll: el('heatmap-scroll'),
+  heatmapMonths: el('heatmap-months'),
+  heatmapGrid: el('heatmap-grid'),
+  heatmapLegend: el('heatmap-legend'),
 
   setupCard: el('setup-card'),
   prevAttended: el('prev-attended'),
@@ -96,6 +120,39 @@ function isoToDisplay(iso) {
   if (!iso || iso.indexOf('-') === -1) return iso || '';
   const [y, m, d] = iso.split('-');
   return `${d}/${m}/${y}`;
+}
+
+/** Parse an ISO date string as a local-time Date (avoids UTC/timezone shifts). */
+function isoToLocalDate(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function localDateToISO(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function isoAddDays(iso, n) {
+  const d = isoToLocalDate(iso);
+  d.setDate(d.getDate() + n);
+  return localDateToISO(d);
+}
+
+function weekdayKeyForISO(iso) {
+  return WEEKDAY_KEYS[isoToLocalDate(iso).getDay()];
+}
+
+/** getDefaultHeldForDate: timetable value for that date's weekday, falling back to the flat default. */
+function getDefaultHeldForDate(iso) {
+  if (state.timetable && iso) {
+    const key = weekdayKeyForISO(iso);
+    const v = state.timetable[key];
+    if (typeof v === 'number' && Number.isFinite(v) && v >= 0) return v;
+  }
+  return DEFAULT_HELD;
 }
 
 function makeId() {
@@ -233,11 +290,19 @@ function loadFromLocalStorage() {
         state.target = Math.min(95, Math.max(50, Math.round(parsed)));
       }
     }
+
+    const rawTimetable = localStorage.getItem(STORAGE_KEY_TIMETABLE);
+    if (rawTimetable) {
+      const parsed = JSON.parse(rawTimetable);
+      const valid = parsed && WEEKDAY_KEYS.every(k => typeof parsed[k] === 'number' && Number.isFinite(parsed[k]) && parsed[k] >= 0);
+      state.timetable = valid ? parsed : null;
+    }
   } catch (err) {
     console.error('Failed to load saved attendance data:', err);
     state.base = { attended: 0, total: 0 };
     state.history = [];
     state.target = DEFAULT_TARGET;
+    state.timetable = null;
   }
 }
 
@@ -246,6 +311,7 @@ function saveToLocalStorage() {
     localStorage.setItem(STORAGE_KEY_BASE, JSON.stringify(state.base));
     localStorage.setItem(STORAGE_KEY_HISTORY, JSON.stringify(state.history));
     localStorage.setItem(STORAGE_KEY_TARGET, JSON.stringify(state.target));
+    localStorage.setItem(STORAGE_KEY_TIMETABLE, JSON.stringify(state.timetable));
   } catch (err) {
     console.error('Failed to save attendance data:', err);
     showToast('Could not save — your browser storage may be full.');
@@ -418,38 +484,106 @@ function renderAttendanceHistory() {
   dom.tableWrap.hidden = !hasHistory;
   if (!hasHistory) {
     dom.historyBody.innerHTML = '';
+  } else {
+    const rows = [...state.history].reverse(); // newest first
+    dom.historyBody.innerHTML = rows.map(r => {
+      const cls = statusClass(r.statusKind);
+      return `
+        <tr data-id="${r.id}">
+          <td>${isoToDisplay(r.date)}</td>
+          <td>${r.attendedToday}</td>
+          <td>${r.classesHeldToday}</td>
+          <td>${r.cumulativeAttended}</td>
+          <td>${r.cumulativeTotal}</td>
+          <td>${r.attendance.toFixed(2)}%</td>
+          <td><span class="status-pill ${cls}">${r.status}</span></td>
+          <td>
+            <div class="row-actions">
+              <button type="button" class="btn btn-ghost btn-small" data-action="edit" data-id="${r.id}">Edit</button>
+              <button type="button" class="btn btn-danger-ghost btn-small" data-action="delete" data-id="${r.id}">Delete</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  renderHeatmap();
+}
+
+/* ---------------- Heatmap ---------------- */
+
+/** Builds a Sunday-aligned, Saturday-padded run of ISO dates covering the visible window. */
+function buildHeatmapDays() {
+  const sortedDates = state.history.map(r => r.date).sort();
+  const earliest = sortedDates[0];
+  const today = todayISO();
+  const windowStart = isoAddDays(today, -(HEATMAP_MAX_DAYS - 1));
+  const start = earliest > windowStart ? earliest : windowStart; // later of the two (string compare works for ISO dates)
+
+  const gridStart = isoAddDays(start, -isoToLocalDate(start).getDay()); // back up to the preceding Sunday
+
+  const days = [];
+  let cursor = gridStart;
+  while (cursor <= today) {
+    days.push(cursor);
+    cursor = isoAddDays(cursor, 1);
+  }
+  while (isoToLocalDate(days[days.length - 1]).getDay() !== 6) {
+    days.push(isoAddDays(days[days.length - 1], 1)); // pad out to Saturday so every week column is full
+  }
+  return { days, today };
+}
+
+function renderHeatmap() {
+  const hasHistory = state.history.length > 0;
+  dom.heatmapEmpty.hidden = hasHistory;
+  dom.heatmapScroll.hidden = !hasHistory;
+  dom.heatmapLegend.hidden = !hasHistory;
+  if (!hasHistory) {
+    dom.heatmapGrid.innerHTML = '';
+    dom.heatmapMonths.innerHTML = '';
     return;
   }
 
-  const rows = [...state.history].reverse(); // newest first
-  dom.historyBody.innerHTML = rows.map(r => {
-    const cls = statusClass(r.statusKind);
-    return `
-      <tr data-id="${r.id}">
-        <td>${isoToDisplay(r.date)}</td>
-        <td>${r.attendedToday}</td>
-        <td>${r.classesHeldToday}</td>
-        <td>${r.cumulativeAttended}</td>
-        <td>${r.cumulativeTotal}</td>
-        <td>${r.attendance.toFixed(2)}%</td>
-        <td><span class="status-pill ${cls}">${r.status}</span></td>
-        <td>
-          <div class="row-actions">
-            <button type="button" class="btn btn-ghost btn-small" data-action="edit" data-id="${r.id}">Edit</button>
-            <button type="button" class="btn btn-danger-ghost btn-small" data-action="delete" data-id="${r.id}">Delete</button>
-          </div>
-        </td>
-      </tr>
-    `;
+  const recordMap = new Map(state.history.map(r => [r.date, r]));
+  const { days, today } = buildHeatmapDays();
+
+  dom.heatmapGrid.innerHTML = days.map(iso => {
+    if (iso > today) return `<div class="heatmap-cell future" aria-hidden="true"></div>`;
+    const record = recordMap.get(iso);
+    if (!record) {
+      return `<div class="heatmap-cell none" title="${isoToDisplay(iso)} — no record"></div>`;
+    }
+    const ratio = record.classesHeldToday > 0 ? record.attendedToday / record.classesHeldToday : 0;
+    const bucket = ratio >= 1 ? 'full' : ratio <= 0 ? 'missed' : 'partial';
+    const title = `${isoToDisplay(iso)} — ${record.attendedToday}/${record.classesHeldToday} classes attended`;
+    return `<div class="heatmap-cell ${bucket}" title="${title}"></div>`;
   }).join('');
+
+  const colWidth = HEATMAP_CELL + HEATMAP_GAP;
+  const weekCount = days.length / 7;
+  let lastMonth = null;
+  let labelsHtml = '';
+  for (let w = 0; w < weekCount; w++) {
+    const firstDayOfWeek = days[w * 7];
+    const monthIdx = isoToLocalDate(firstDayOfWeek).getMonth();
+    if (monthIdx !== lastMonth) {
+      const label = isoToLocalDate(firstDayOfWeek).toLocaleDateString('en-US', { month: 'short' });
+      labelsHtml += `<span class="heatmap-month-label" style="left:${w * colWidth}px">${label}</span>`;
+      lastMonth = monthIdx;
+    }
+  }
+  dom.heatmapMonths.innerHTML = labelsHtml;
 }
 
 /* ---------------- Actions ---------------- */
 
 function resetToday() {
-  dom.todayDate.value = todayISO();
+  const iso = todayISO();
+  dom.todayDate.value = iso;
   dom.todayAttended.value = '';
-  dom.todayHeld.value = '8';
+  dom.todayHeld.value = String(getDefaultHeldForDate(iso));
   dom.todayError.textContent = '';
 }
 
@@ -515,6 +649,51 @@ function saveSetup() {
   renderDashboard();
   renderAttendanceHistory();
   showToast('Starting point saved.');
+}
+
+/* ---------------- Weekly timetable ---------------- */
+
+function readTimetableInputs() {
+  return {
+    sun: dom.ttSun.value, mon: dom.ttMon.value, tue: dom.ttTue.value, wed: dom.ttWed.value,
+    thu: dom.ttThu.value, fri: dom.ttFri.value, sat: dom.ttSat.value
+  };
+}
+
+function validateTimetable(values) {
+  for (const key of WEEKDAY_KEYS) {
+    const n = Number(values[key]);
+    if (values[key] === '' || !Number.isFinite(n)) return 'Please enter a number for every day.';
+    if (!Number.isInteger(n)) return 'Please enter whole numbers.';
+    if (n < 0) return 'Classes per day cannot be negative.';
+  }
+  return null;
+}
+
+function saveTimetable() {
+  dom.timetableError.textContent = '';
+  const raw = readTimetableInputs();
+  const error = validateTimetable(raw);
+  if (error) {
+    dom.timetableError.textContent = error;
+    return;
+  }
+  const timetable = {};
+  WEEKDAY_KEYS.forEach(key => { timetable[key] = parseInt(raw[key], 10); });
+  state.timetable = timetable;
+  saveToLocalStorage();
+  dom.todayHeld.value = String(getDefaultHeldForDate(dom.todayDate.value || todayISO()));
+  showToast('Weekly timetable saved.');
+}
+
+function clearTimetable() {
+  state.timetable = null;
+  saveToLocalStorage();
+  dom.ttMon.value = '8'; dom.ttTue.value = '8'; dom.ttWed.value = '8';
+  dom.ttThu.value = '8'; dom.ttFri.value = '8'; dom.ttSat.value = '0'; dom.ttSun.value = '0';
+  dom.timetableError.textContent = '';
+  dom.todayHeld.value = String(getDefaultHeldForDate(dom.todayDate.value || todayISO()));
+  showToast('Back to the flat 8-classes default.');
 }
 
 function deleteAttendanceRecord(id) {
@@ -620,6 +799,13 @@ function wireEvents() {
   dom.resetBtn.addEventListener('click', resetToday);
   dom.clearHistoryBtn.addEventListener('click', clearHistory);
 
+  dom.todayDate.addEventListener('change', () => {
+    dom.todayHeld.value = String(getDefaultHeldForDate(dom.todayDate.value));
+  });
+
+  dom.saveTimetableBtn.addEventListener('click', saveTimetable);
+  dom.clearTimetableBtn.addEventListener('click', clearTimetable);
+
   dom.plannerClasses.addEventListener('input', renderPlanner);
 
   dom.targetSlider.addEventListener('input', (e) => {
@@ -679,9 +865,20 @@ function init() {
   const currentTheme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
   applyTheme(currentTheme);
 
-  dom.todayDate.value = todayISO();
-  dom.todayHeld.value = '8';
+  const iso = todayISO();
+  dom.todayDate.value = iso;
+  dom.todayHeld.value = String(getDefaultHeldForDate(iso));
   dom.targetSlider.value = String(state.target);
+
+  if (state.timetable) {
+    dom.ttSun.value = String(state.timetable.sun);
+    dom.ttMon.value = String(state.timetable.mon);
+    dom.ttTue.value = String(state.timetable.tue);
+    dom.ttWed.value = String(state.timetable.wed);
+    dom.ttThu.value = String(state.timetable.thu);
+    dom.ttFri.value = String(state.timetable.fri);
+    dom.ttSat.value = String(state.timetable.sat);
+  }
 
   wireEvents();
   renderDashboard();

@@ -129,6 +129,47 @@
     </div>
   </section>
 
+  <!-- ============ WEEKLY TIMETABLE ============ -->
+  <section class="note-card" id="timetable-card">
+    <h2 class="note-title">Weekly timetable</h2>
+    <p class="note-hint">Set how many classes you typically have each day, and "Total classes held today" will auto-fill based on the date you pick.</p>
+    <div class="timetable-grid">
+      <div class="field">
+        <label for="tt-mon">Mon</label>
+        <input type="number" id="tt-mon" min="0" step="1" value="8" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label for="tt-tue">Tue</label>
+        <input type="number" id="tt-tue" min="0" step="1" value="8" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label for="tt-wed">Wed</label>
+        <input type="number" id="tt-wed" min="0" step="1" value="8" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label for="tt-thu">Thu</label>
+        <input type="number" id="tt-thu" min="0" step="1" value="8" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label for="tt-fri">Fri</label>
+        <input type="number" id="tt-fri" min="0" step="1" value="8" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label for="tt-sat">Sat</label>
+        <input type="number" id="tt-sat" min="0" step="1" value="0" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label for="tt-sun">Sun</label>
+        <input type="number" id="tt-sun" min="0" step="1" value="0" inputmode="numeric">
+      </div>
+    </div>
+    <p class="field-error" id="timetable-error" role="alert"></p>
+    <div class="btn-row">
+      <button class="btn btn-secondary" id="save-timetable-btn" type="button">Save timetable</button>
+      <button class="btn btn-ghost" id="clear-timetable-btn" type="button">Use flat default (8) instead</button>
+    </div>
+  </section>
+
   <!-- ============ ATTENDANCE PLANNER ============ -->
   <section class="note-card" id="planner-card">
     <h2 class="note-title">Planner</h2>
@@ -138,6 +179,30 @@
       <input type="number" id="planner-classes" min="0" step="1" value="8" inputmode="numeric">
     </div>
     <div class="planner-grid" id="planner-grid" aria-live="polite"></div>
+  </section>
+
+  <!-- ============ ATTENDANCE HEATMAP ============ -->
+  <section class="note-card" id="heatmap-card">
+    <h2 class="note-title">Attendance heatmap</h2>
+    <p class="note-hint">Each square is one logged day, coloured by how much of that day you attended.</p>
+
+    <div class="empty-state" id="heatmap-empty">
+      <div class="empty-icon">&#128197;</div>
+      <p>No attendance records yet.</p>
+      <p class="empty-sub">Your heatmap fills in as you log days.</p>
+    </div>
+
+    <div class="heatmap-scroll" id="heatmap-scroll" hidden>
+      <div class="heatmap-months" id="heatmap-months"></div>
+      <div class="heatmap-grid" id="heatmap-grid" role="img" aria-label="Calendar heatmap of daily attendance"></div>
+    </div>
+
+    <div class="heatmap-legend" id="heatmap-legend" hidden>
+      <span class="heatmap-legend-item"><span class="heatmap-swatch none"></span>No record</span>
+      <span class="heatmap-legend-item"><span class="heatmap-swatch missed"></span>Missed</span>
+      <span class="heatmap-legend-item"><span class="heatmap-swatch partial"></span>Partial</span>
+      <span class="heatmap-legend-item"><span class="heatmap-swatch full"></span>Full</span>
+    </div>
   </section>
 
   <!-- ============ ATTENDANCE HISTORY ============ -->
