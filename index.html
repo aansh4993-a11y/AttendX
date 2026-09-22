@@ -5,6 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Attendance Register</title>
 <meta name="description" content="Track daily attendance and know exactly when you can skip class.">
+<script>
+  (function () {
+    try {
+      var saved = localStorage.getItem('attendanceRegister.theme');
+      var theme = saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', theme);
+    } catch (e) { /* localStorage unavailable — default light theme applies */ }
+  })();
+</script>
 <link rel="icon" type="image/png" href="attendx-logo.png">
 <link rel="apple-touch-icon" href="attendx-logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -14,12 +23,16 @@
 </head>
 <body>
 
+<button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch to dark mode" aria-pressed="false">
+  <span class="theme-toggle-icon" id="theme-toggle-icon" aria-hidden="true">🌙</span>
+</button>
+
 <div class="page-wrap">
 
   <header class="masthead">
     <div class="masthead-top">
-      <span class="masthead-index">Semester-03</span>
-      <span class="masthead-index">Made by "ANSH AGARWAL"</span>
+      <span class="masthead-index">No. 01</span>
+      <span class="masthead-index">Est. this term</span>
     </div>
     <img src="attendx-logo.png" alt="AttendX logo" class="masthead-logo">
     <h1 class="masthead-title">Attendance Register</h1>
@@ -41,12 +54,20 @@
 
       <div class="progress-track" role="progressbar" aria-label="Attendance progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progress-track">
         <div class="progress-fill" id="progress-fill"></div>
-        <div class="progress-target" style="left:75%" title="75% required"></div>
+        <div class="progress-target" id="progress-target-marker" style="left:75%" title="75% target"></div>
       </div>
       <div class="progress-scale">
         <span>0%</span>
-        <span class="progress-target-label">75% required</span>
+        <span class="progress-target-label" id="progress-target-label">75% target</span>
         <span>100%</span>
+      </div>
+
+      <div class="target-control">
+        <div class="target-control-row">
+          <label for="target-slider">Attendance target</label>
+          <span class="target-value" id="target-value">75%</span>
+        </div>
+        <input type="range" id="target-slider" min="50" max="95" step="1" value="75" aria-label="Attendance target percentage">
       </div>
 
       <div class="stat-line">
@@ -57,10 +78,6 @@
         <div class="stat">
           <span class="stat-label">Total classes</span>
           <span class="stat-value" id="stat-total">0</span>
-        </div>
-        <div class="stat">
-          <span class="stat-label">Required</span>
-          <span class="stat-value">75%</span>
         </div>
       </div>
 

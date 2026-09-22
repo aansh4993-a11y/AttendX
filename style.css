@@ -30,6 +30,39 @@
   --shadow: 0 1px 2px rgba(30, 42, 50, 0.06), 0 6px 20px -8px rgba(30, 42, 50, 0.18);
 }
 
+:root[data-theme="dark"] {
+  --paper: #12171B;
+  --paper-line: #232C33;
+  --card: #171E24;
+  --card-line: #2A343C;
+  --ink: #ECEAE2;
+  --ink-soft: #ADB6BB;
+  --ink-faint: #7C878D;
+  --margin: #E1786A;
+  --margin-soft: #6B3F38;
+  --green: #6BC79A;
+  --green-bg: rgba(107, 199, 154, 0.14);
+  --amber: #E3C065;
+  --amber-bg: rgba(227, 192, 101, 0.14);
+  --red: #E1786A;
+  --red-bg: rgba(225, 120, 106, 0.14);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 10px 30px -10px rgba(0, 0, 0, 0.6);
+}
+
+body,
+.ledger-card,
+.note-card,
+.ledger-table-card,
+.modal-card,
+.field input,
+.status-chip,
+.progress-track,
+.progress-fill,
+.btn,
+.theme-toggle {
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
 * { box-sizing: border-box; }
 
 html {
@@ -231,6 +264,39 @@ body {
 }
 
 .progress-target-label { color: var(--ink-soft); }
+
+.target-control {
+  margin-bottom: 1.3rem;
+}
+
+.target-control-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.target-control-row label {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  font-weight: 500;
+}
+
+.target-value {
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.target-control input[type="range"] {
+  width: 100%;
+  height: 30px;
+  accent-color: var(--margin);
+  cursor: pointer;
+  background: transparent;
+}
 
 .stat-line {
   display: flex;
@@ -579,6 +645,45 @@ body {
   box-shadow: var(--shadow);
   z-index: 60;
   max-width: calc(100vw - 2.5rem);
+}
+
+/* ---------------- Theme toggle ---------------- */
+
+.theme-toggle {
+  position: fixed;
+  top: 1.1rem;
+  right: 1.1rem;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--card);
+  border: 1px solid var(--card-line);
+  box-shadow: var(--shadow);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.15rem;
+  cursor: pointer;
+  z-index: 40;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theme-toggle:hover {
+  border-color: var(--margin-soft);
+}
+
+.theme-toggle:active {
+  transform: scale(0.94);
+}
+
+@media (max-width: 640px) {
+  .theme-toggle {
+    top: 0.75rem;
+    right: 0.75rem;
+    width: 40px;
+    height: 40px;
+    font-size: 1rem;
+  }
 }
 
 /* ---------------- Focus visibility ---------------- */

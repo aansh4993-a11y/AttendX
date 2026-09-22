@@ -5,15 +5,18 @@
    Vanilla JS. No frameworks, no build step.
    ========================================================= */
 
-const REQUIRED_PCT = 75;
 const STORAGE_KEY_BASE = 'attendanceRegister.base';
 const STORAGE_KEY_HISTORY = 'attendanceRegister.history';
+const STORAGE_KEY_TARGET = 'attendanceRegister.target';
+const STORAGE_KEY_THEME = 'attendanceRegister.theme';
+const DEFAULT_TARGET = 75;
 const EPS = 1e-9;
 
 /** In-memory application state, mirrored to localStorage. */
 const state = {
   base: { attended: 0, total: 0 },   // starting point before any daily record
-  history: []                        // [{ id, date, attendedToday, classesHeldToday, cumulativeAttended, cumulativeTotal, attendance, status }]
+  history: [],                       // [{ id, date, attendedToday, classesHeldToday, cumulativeAttended, cumulativeTotal, attendance, statusKind, status }]
+  target: DEFAULT_TARGET             // desired attendance benchmark, e.g. 80
 };
 
 let editingId = null;
@@ -32,6 +35,14 @@ const dom = {
   statAttended: el('stat-attended'),
   statTotal: el('stat-total'),
   verdictText: el('verdict-text'),
+
+  targetSlider: el('target-slider'),
+  targetValue: el('target-value'),
+  progressTargetMarker: el('progress-target-marker'),
+  progressTargetLabel: el('progress-target-label'),
+
+  themeToggle: el('theme-toggle'),
+  themeToggleIcon: el('theme-toggle-icon'),
 
   setupCard: el('setup-card'),
   prevAttended: el('prev-attended'),
@@ -102,6 +113,34 @@ function showToast(message, duration = 2600) {
   toastTimer = setTimeout(() => { dom.toast.hidden = true; }, duration);
 }
 
+/* ---------------- Theme (dark / light) ---------------- */
+
+function getStoredTheme() {
+  try {
+    return localStorage.getItem(STORAGE_KEY_THEME);
+  } catch (err) {
+    return null;
+  }
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  const isDark = theme === 'dark';
+  dom.themeToggle.setAttribute('aria-pressed', String(isDark));
+  dom.themeToggle.setAttribute('aria-label', isDark ? 'Switch to light mode' : 'Switch to dark mode');
+  dom.themeToggleIcon.textContent = isDark ? '☀️' : '🌙';
+  try {
+    localStorage.setItem(STORAGE_KEY_THEME, theme);
+  } catch (err) {
+    console.error('Could not save theme preference:', err);
+  }
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  applyTheme(current === 'dark' ? 'light' : 'dark');
+}
+
 /* ---------------- Core calculations ---------------- */
 
 /** calculateAttendance(attended, total) -> percentage (number), 0 when total is 0 */
@@ -110,45 +149,54 @@ function calculateAttendance(attended, total) {
   return (attended / total) * 100;
 }
 
-/** Determine status using integer comparison to avoid float drift. */
-function statusFor(attended, total) {
-  if (!total || total <= 0) return 'No data';
-  const lhs = attended * 4;
-  const rhs = total * 3; // 0.75 * total, scaled by 4
-  if (Math.abs(lhs - rhs) < EPS) return 'Exactly 75%';
-  return lhs < rhs ? 'Below 75%' : 'Above 75%';
+/** Determine status kind using integer comparison — exact, since target is always a whole percent. */
+function statusKindFor(attended, total, target) {
+  if (!total || total <= 0) return null;
+  const lhs = attended * 100;
+  const rhs = total * target;
+  if (lhs === rhs) return 'exact';
+  return lhs < rhs ? 'below' : 'above';
 }
 
-function statusClass(status) {
-  if (status === 'Below 75%') return 'below';
-  if (status === 'Exactly 75%') return 'exact';
-  if (status === 'Above 75%') return 'above';
-  return '';
+/** Human-readable label for a status kind, at a given target. */
+function statusLabelFor(kind, target) {
+  if (kind === 'exact') return `Exactly ${target}%`;
+  if (kind === 'below') return `Below ${target}%`;
+  if (kind === 'above') return `Above ${target}%`;
+  return 'No data';
 }
 
-/** calculateClassesNeeded: consecutive classes to attend to reach 75%, assuming all are attended. */
-function calculateClassesNeeded(attended, total) {
+function statusClass(kind) {
+  return kind === 'below' || kind === 'exact' || kind === 'above' ? kind : '';
+}
+
+/** calculateClassesNeeded: consecutive classes to attend to reach the target %, assuming all are attended. */
+function calculateClassesNeeded(attended, total, target) {
   if (total <= 0) return 0;
-  const raw = (0.75 * total - attended) / 0.25;
+  const t = target / 100;
+  if (t >= 1) return attended >= total ? 0 : Infinity;
+  const raw = (t * total - attended) / (1 - t);
   let x = Math.ceil(raw - EPS);
   x = clampNonNegative(x);
   // Safety verification per spec §37 — nudge up if rounding left it just short.
   let guard = 0;
-  while (x > 0 && (attended + x) / (total + x) < 0.75 - EPS && guard < 5) {
+  while (x > 0 && (attended + x) / (total + x) < t - EPS && guard < 5) {
     x++; guard++;
   }
   return x;
 }
 
-/** calculateClassesCanSkip: classes that can be missed while staying at/above 75%. */
-function calculateClassesCanSkip(attended, total) {
+/** calculateClassesCanSkip: classes that can be missed while staying at/above the target %. */
+function calculateClassesCanSkip(attended, total, target) {
   if (total <= 0) return 0;
-  const raw = (attended - 0.75 * total) / 0.75;
+  const t = target / 100;
+  if (t <= 0) return Infinity;
+  const raw = (attended - t * total) / t;
   let x = Math.floor(raw + EPS);
   x = clampNonNegative(x);
   // Safety verification per spec §37 — pull back if rounding made it unsafe.
   let guard = 0;
-  while (x > 0 && attended / (total + x) < 0.75 - EPS && guard < 5) {
+  while (x > 0 && attended / (total + x) < t - EPS && guard < 5) {
     x--; guard++;
   }
   return x;
@@ -167,6 +215,7 @@ function loadFromLocalStorage() {
   try {
     const rawBase = localStorage.getItem(STORAGE_KEY_BASE);
     const rawHistory = localStorage.getItem(STORAGE_KEY_HISTORY);
+    const rawTarget = localStorage.getItem(STORAGE_KEY_TARGET);
 
     if (rawBase) {
       const parsed = JSON.parse(rawBase);
@@ -178,10 +227,17 @@ function loadFromLocalStorage() {
       const parsed = JSON.parse(rawHistory);
       if (Array.isArray(parsed)) state.history = parsed;
     }
+    if (rawTarget) {
+      const parsed = Number(JSON.parse(rawTarget));
+      if (Number.isFinite(parsed)) {
+        state.target = Math.min(95, Math.max(50, Math.round(parsed)));
+      }
+    }
   } catch (err) {
     console.error('Failed to load saved attendance data:', err);
     state.base = { attended: 0, total: 0 };
     state.history = [];
+    state.target = DEFAULT_TARGET;
   }
 }
 
@@ -189,6 +245,7 @@ function saveToLocalStorage() {
   try {
     localStorage.setItem(STORAGE_KEY_BASE, JSON.stringify(state.base));
     localStorage.setItem(STORAGE_KEY_HISTORY, JSON.stringify(state.history));
+    localStorage.setItem(STORAGE_KEY_TARGET, JSON.stringify(state.target));
   } catch (err) {
     console.error('Failed to save attendance data:', err);
     showToast('Could not save — your browser storage may be full.');
@@ -214,7 +271,8 @@ function updateCumulativeAttendance() {
     record.cumulativeAttended = cumAttended;
     record.cumulativeTotal = cumTotal;
     record.attendance = calculateAttendance(cumAttended, cumTotal);
-    record.status = statusFor(cumAttended, cumTotal);
+    record.statusKind = statusKindFor(cumAttended, cumTotal, state.target);
+    record.status = statusLabelFor(record.statusKind, state.target);
   }
 }
 
@@ -262,10 +320,12 @@ function validateBase(prevAttendedVal, prevTotalVal) {
 
 function renderDashboard() {
   const { attended, total } = getLatestCumulative();
+  const target = state.target;
   const pct = calculateAttendance(attended, total);
   const hasData = total > 0;
-  const status = hasData ? statusFor(attended, total) : null;
-  const cls = statusClass(status);
+  const kind = hasData ? statusKindFor(attended, total, target) : null;
+  const status = hasData ? statusLabelFor(kind, target) : null;
+  const cls = statusClass(kind);
 
   dom.currentPercent.textContent = hasData ? `${pct.toFixed(2)}%` : '0.00%';
   dom.statAttended.textContent = String(attended);
@@ -279,24 +339,40 @@ function renderDashboard() {
   dom.progressFill.className = 'progress-fill' + (cls ? ' ' + cls : '');
   dom.progressTrack.setAttribute('aria-valuenow', hasData ? pct.toFixed(0) : '0');
 
+  dom.targetValue.textContent = `${target}%`;
+  if (Number(dom.targetSlider.value) !== target) dom.targetSlider.value = String(target);
+  dom.progressTargetMarker.style.left = target + '%';
+  dom.progressTargetMarker.title = `${target}% target`;
+  dom.progressTargetLabel.textContent = `${target}% target`;
+
   if (!hasData) {
     dom.verdictText.textContent = "Add today's attendance below to start tracking.";
-  } else if (status === 'Below 75%') {
-    const needed = calculateClassesNeeded(attended, total);
+  } else if (kind === 'below') {
+    const needed = calculateClassesNeeded(attended, total, target);
     dom.verdictText.textContent =
-      `⚠️ Your attendance is below 75%. Attend the next ${needed} class${needed === 1 ? '' : 'es'} consecutively to reach 75%.`;
-  } else if (status === 'Exactly 75%') {
+      `⚠️ Your attendance is below ${target}%. Attend the next ${needed} class${needed === 1 ? '' : 'es'} consecutively to reach ${target}%.`;
+  } else if (kind === 'exact') {
     dom.verdictText.textContent =
-      '✅ Your attendance is exactly 75%. You are currently meeting the minimum requirement — any missed class will drop you below it.';
+      `✅ Your attendance is exactly ${target}%. You are currently meeting your target — any missed class will drop you below it.`;
   } else {
-    const skip = calculateClassesCanSkip(attended, total);
+    const skip = calculateClassesCanSkip(attended, total, target);
     dom.verdictText.textContent =
-      `🎉 Your attendance is above 75%. You can leave ${skip} more lecture${skip === 1 ? '' : 's'} and still maintain at least 75%.`;
+      `🎉 Your attendance is above ${target}%. You can leave ${skip} more lecture${skip === 1 ? '' : 's'} and still maintain at least ${target}%.`;
   }
 
   dom.setupCard.hidden = state.history.length !== 0;
 
   renderPlanner();
+}
+
+function updateTarget(newTarget) {
+  const clamped = Math.min(95, Math.max(50, Math.round(newTarget)));
+  if (clamped === state.target) return;
+  state.target = clamped;
+  updateCumulativeAttendance(); // every record's status label depends on the target
+  saveToLocalStorage();
+  renderDashboard();
+  renderAttendanceHistory();
 }
 
 function renderPlanner() {
@@ -323,8 +399,8 @@ function renderPlanner() {
   dom.plannerGrid.innerHTML = '';
   scenarios.forEach(s => {
     const pct = calculateFutureAttendance(attended, total, s.attendedMore, n);
-    const status = total + n > 0 ? statusFor(attended + s.attendedMore, total + n) : 'No data';
-    const cls = statusClass(status);
+    const kind = total + n > 0 ? statusKindFor(attended + s.attendedMore, total + n, state.target) : null;
+    const cls = statusClass(kind);
 
     const item = document.createElement('div');
     item.className = 'planner-item';
@@ -347,7 +423,7 @@ function renderAttendanceHistory() {
 
   const rows = [...state.history].reverse(); // newest first
   dom.historyBody.innerHTML = rows.map(r => {
-    const cls = statusClass(r.status);
+    const cls = statusClass(r.statusKind);
     return `
       <tr data-id="${r.id}">
         <td>${isoToDisplay(r.date)}</td>
@@ -546,6 +622,12 @@ function wireEvents() {
 
   dom.plannerClasses.addEventListener('input', renderPlanner);
 
+  dom.targetSlider.addEventListener('input', (e) => {
+    updateTarget(parseInt(e.target.value, 10));
+  });
+
+  dom.themeToggle.addEventListener('click', toggleTheme);
+
   dom.todayForm.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -594,8 +676,12 @@ function init() {
   loadFromLocalStorage();
   updateCumulativeAttendance();
 
+  const currentTheme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  applyTheme(currentTheme);
+
   dom.todayDate.value = todayISO();
   dom.todayHeld.value = '8';
+  dom.targetSlider.value = String(state.target);
 
   wireEvents();
   renderDashboard();
