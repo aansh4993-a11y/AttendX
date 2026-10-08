@@ -69,6 +69,11 @@ const dom = {
   heatmapGrid: el('heatmap-grid'),
   heatmapLegend: el('heatmap-legend'),
 
+  qcAttended: el('qc-attended'),
+  qcTotal: el('qc-total'),
+  qcTarget: el('qc-target'),
+  qcResult: el('qc-result'),
+
   skipPctInput: el('skip-pct-input'),
   skipResult: el('skip-result'),
 
@@ -673,6 +678,59 @@ function renderSkipCalculator() {
   }
 }
 
+/* ---------------- Quick calculator (independent of saved data) ---------------- */
+
+function renderQuickCalc() {
+  const box = dom.qcResult;
+  box.className = 'skip-result';
+
+  const aRaw = dom.qcAttended.value;
+  const tRaw = dom.qcTotal.value;
+  const pRaw = dom.qcTarget.value;
+
+  if (aRaw === '' || tRaw === '') {
+    box.innerHTML = '<div class="skip-result-note">Enter the classes you attended and the total classes held.</div>';
+    return;
+  }
+  const attended = Number(aRaw);
+  const total = Number(tRaw);
+  const target = Number(pRaw);
+
+  let error = null;
+  if (!Number.isFinite(attended) || !Number.isFinite(total)) error = 'Please enter valid numbers.';
+  else if (!Number.isInteger(attended) || !Number.isInteger(total)) error = 'Please enter whole numbers.';
+  else if (total <= 0) error = 'Total classes must be greater than zero.';
+  else if (attended < 0) error = 'Classes attended cannot be negative.';
+  else if (attended > total) error = 'Classes attended cannot be greater than total classes.';
+  else if (pRaw === '' || !Number.isFinite(target) || target < 1 || target > 99) error = 'Enter a target percentage between 1 and 99.';
+
+  if (error) {
+    box.classList.add('short');
+    box.innerHTML = `<div class="skip-result-note">${error}</div>`;
+    return;
+  }
+
+  const pct = calculateAttendance(attended, total);
+  const meets = pct >= target - EPS;
+  let sentence;
+  if (meets) {
+    const skip = calculateClassesCanSkip(attended, total, target);
+    box.classList.add('ok');
+    sentence = skip === 0
+      ? `You're at or just above ${target}%, so you can't skip any class without dropping below it.`
+      : `You can skip ${skip} more class${skip === 1 ? '' : 'es'} and still stay at or above ${target}%.`;
+  } else {
+    const needed = calculateClassesNeeded(attended, total, target);
+    box.classList.add('short');
+    sentence = `You're below ${target}%. Attend the next ${needed} class${needed === 1 ? '' : 'es'} in a row to reach it.`;
+  }
+
+  box.innerHTML =
+    '<div class="skip-result-label">Your attendance</div>' +
+    `<div class="skip-result-number">${pct.toFixed(2)}%</div>` +
+    `<div class="skip-result-note">${attended} of ${total} classes. ${sentence}</div>`;
+}
+
 /* ---------------- Notes ---------------- */
 
 let notesSaveTimer = null;
@@ -967,6 +1025,7 @@ function wireEvents() {
 
   dom.plannerClasses.addEventListener('input', renderPlanner);
   dom.skipPctInput.addEventListener('input', renderSkipCalculator);
+  [dom.qcAttended, dom.qcTotal, dom.qcTarget].forEach(input => input.addEventListener('input', renderQuickCalc));
 
   dom.notesTextarea.addEventListener('input', saveNotesDebounced);
 
@@ -1053,6 +1112,7 @@ function init() {
   wireEvents();
   renderDashboard();
   renderAttendanceHistory();
+  renderQuickCalc();
 }
 
 document.addEventListener('DOMContentLoaded', init);
