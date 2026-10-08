@@ -181,6 +181,19 @@
     <div class="planner-grid" id="planner-grid" aria-live="polite"></div>
   </section>
 
+  <!-- ============ SKIP CALCULATOR ============ -->
+  <section class="note-card" id="skip-calc-card">
+    <h2 class="note-title">Skip calculator</h2>
+    <p class="note-hint">Type any percentage and see how many classes you can skip while staying at or above it.</p>
+    <div class="skip-calc-layout">
+      <div class="field">
+        <label for="skip-pct-input">Percentage to maintain</label>
+        <input type="number" id="skip-pct-input" min="1" max="99" step="any" value="80" inputmode="decimal">
+      </div>
+      <div class="skip-result" id="skip-result" aria-live="polite"></div>
+    </div>
+  </section>
+
   <!-- ============ ATTENDANCE HEATMAP ============ -->
   <section class="note-card" id="heatmap-card">
     <h2 class="note-title">Attendance heatmap</h2>
@@ -206,11 +219,15 @@
   </section>
 
   <!-- ============ ATTENDANCE HISTORY ============ -->
-  <section class="ledger-table-card">
+  <section class="ledger-table-card" id="history-card">
     <div class="ledger-table-head">
       <h2 class="note-title">Attendance history</h2>
-      <button class="btn btn-danger-ghost" id="clear-history-btn" type="button">Clear history</button>
+      <div class="ledger-table-head-actions">
+        <button class="btn btn-ghost btn-small" id="print-report-btn" type="button">Print report</button>
+        <button class="btn btn-danger-ghost" id="clear-history-btn" type="button">Clear history</button>
+      </div>
     </div>
+    <p class="print-meta" id="print-meta"></p>
 
     <div class="empty-state" id="empty-state">
       <div class="empty-icon">&#128203;</div>
@@ -229,11 +246,21 @@
             <th>Cum. total</th>
             <th>Attendance</th>
             <th>Status</th>
-            <th>Action</th>
+            <th class="no-print-col">Action</th>
           </tr>
         </thead>
         <tbody id="history-body"></tbody>
       </table>
+    </div>
+  </section>
+
+  <!-- ============ NOTES ============ -->
+  <section class="note-card" id="notes-card">
+    <h2 class="note-title">Notes</h2>
+    <p class="note-hint">Anything you want to remember — assignment deadlines, reminders, whatever. Saved automatically as you type.</p>
+    <textarea id="notes-textarea" class="notes-textarea" placeholder="e.g. Physics assignment due Friday, ask professor about the makeup class..."></textarea>
+    <div class="notes-meta">
+      <span class="notes-status" id="notes-status" aria-live="polite"></span>
     </div>
   </section>
 
@@ -281,7 +308,10 @@
   </div>
 </div>
 
-<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden>
+  <span class="toast-message" id="toast-message"></span>
+  <button type="button" class="toast-action" id="toast-action" hidden></button>
+</div>
 
 <script src="script.js"></script>
 </body>

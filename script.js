@@ -10,6 +10,7 @@ const STORAGE_KEY_HISTORY = 'attendanceRegister.history';
 const STORAGE_KEY_TARGET = 'attendanceRegister.target';
 const STORAGE_KEY_THEME = 'attendanceRegister.theme';
 const STORAGE_KEY_TIMETABLE = 'attendanceRegister.timetable';
+const STORAGE_KEY_NOTES = 'attendanceRegister.notes';
 const DEFAULT_TARGET = 75;
 const DEFAULT_HELD = 8;
 const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']; // matches Date#getDay() index
@@ -67,6 +68,18 @@ const dom = {
   heatmapMonths: el('heatmap-months'),
   heatmapGrid: el('heatmap-grid'),
   heatmapLegend: el('heatmap-legend'),
+
+  skipPctInput: el('skip-pct-input'),
+  skipResult: el('skip-result'),
+
+  printReportBtn: el('print-report-btn'),
+  printMeta: el('print-meta'),
+
+  notesTextarea: el('notes-textarea'),
+  notesStatus: el('notes-status'),
+
+  toastMessage: el('toast-message'),
+  toastAction: el('toast-action'),
 
   setupCard: el('setup-card'),
   prevAttended: el('prev-attended'),
@@ -163,9 +176,22 @@ function clampNonNegative(n) {
   return Math.max(0, n);
 }
 
-function showToast(message, duration = 2600) {
+function showToast(message, opts = {}) {
+  const { duration = 2600, actionLabel = null, onAction = null } = opts;
   clearTimeout(toastTimer);
-  dom.toast.textContent = message;
+  dom.toastMessage.textContent = message;
+  if (actionLabel && onAction) {
+    dom.toastAction.textContent = actionLabel;
+    dom.toastAction.hidden = false;
+    dom.toastAction.onclick = () => {
+      clearTimeout(toastTimer);
+      dom.toast.hidden = true;
+      onAction();
+    };
+  } else {
+    dom.toastAction.hidden = true;
+    dom.toastAction.onclick = null;
+  }
   dom.toast.hidden = false;
   toastTimer = setTimeout(() => { dom.toast.hidden = true; }, duration);
 }
@@ -264,6 +290,35 @@ function calculateFutureAttendance(attended, total, attendedMore, classesMore) {
   const newTotal = total + classesMore;
   if (newTotal <= 0) return 0;
   return ((attended + attendedMore) / newTotal) * 100;
+}
+
+/**
+ * calculateCrossingDate: simulates day by day from tomorrow, attending every class,
+ * and returns the ISO date on which attendance first reaches the target (or null).
+ * Uses the weekly timetable if saved; otherwise assumes Mon-Fri at the default class count.
+ */
+function calculateCrossingDate(attended, total, target) {
+  if (total <= 0) return null;
+  if (statusKindFor(attended, total, target) !== 'below') return null;
+  let a = attended;
+  let t = total;
+  let cursor = todayISO();
+  for (let i = 0; i < 3650; i++) {
+    cursor = isoAddDays(cursor, 1);
+    let held;
+    if (state.timetable) {
+      held = getDefaultHeldForDate(cursor);
+    } else {
+      const dow = isoToLocalDate(cursor).getDay();
+      held = (dow === 0 || dow === 6) ? 0 : DEFAULT_HELD;
+    }
+    if (held > 0) {
+      a += held;
+      t += held;
+      if (statusKindFor(a, t, target) !== 'below') return cursor;
+    }
+  }
+  return null;
 }
 
 /* ---------------- Persistence ---------------- */
@@ -415,8 +470,12 @@ function renderDashboard() {
     dom.verdictText.textContent = "Add today's attendance below to start tracking.";
   } else if (kind === 'below') {
     const needed = calculateClassesNeeded(attended, total, target);
+    const crossDate = calculateCrossingDate(attended, total, target);
+    const crossText = crossDate
+      ? ` Attending every class from tomorrow, you'd be back at ${target}% around ${isoToDisplay(crossDate)}.`
+      : '';
     dom.verdictText.textContent =
-      `⚠️ Your attendance is below ${target}%. Attend the next ${needed} class${needed === 1 ? '' : 'es'} consecutively to reach ${target}%.`;
+      `⚠️ Your attendance is below ${target}%. Attend the next ${needed} class${needed === 1 ? '' : 'es'} consecutively to reach ${target}%.${crossText}`;
   } else if (kind === 'exact') {
     dom.verdictText.textContent =
       `✅ Your attendance is exactly ${target}%. You are currently meeting your target — any missed class will drop you below it.`;
@@ -429,6 +488,7 @@ function renderDashboard() {
   dom.setupCard.hidden = state.history.length !== 0;
 
   renderPlanner();
+  renderSkipCalculator();
 }
 
 function updateTarget(newTarget) {
@@ -497,7 +557,7 @@ function renderAttendanceHistory() {
           <td>${r.cumulativeTotal}</td>
           <td>${r.attendance.toFixed(2)}%</td>
           <td><span class="status-pill ${cls}">${r.status}</span></td>
-          <td>
+          <td class="no-print-col">
             <div class="row-actions">
               <button type="button" class="btn btn-ghost btn-small" data-action="edit" data-id="${r.id}">Edit</button>
               <button type="button" class="btn btn-danger-ghost btn-small" data-action="delete" data-id="${r.id}">Delete</button>
@@ -577,6 +637,72 @@ function renderHeatmap() {
   dom.heatmapMonths.innerHTML = labelsHtml;
 }
 
+/* ---------------- Skip calculator (any percentage) ---------------- */
+
+function renderSkipCalculator() {
+  const { attended, total } = getLatestCumulative();
+  const raw = dom.skipPctInput.value;
+  const pct = Number(raw);
+  const box = dom.skipResult;
+  box.className = 'skip-result';
+
+  if (raw === '' || !Number.isFinite(pct) || pct < 1 || pct > 99) {
+    box.innerHTML = '<div class="skip-result-note">Enter a percentage between 1 and 99.</div>';
+    return;
+  }
+  if (total <= 0) {
+    box.innerHTML = '<div class="skip-result-note">Add some attendance first, then this will show how many classes you can skip.</div>';
+    return;
+  }
+
+  const current = calculateAttendance(attended, total);
+  if (current >= pct - EPS) {
+    const skip = calculateClassesCanSkip(attended, total, pct);
+    box.classList.add('ok');
+    box.innerHTML =
+      '<div class="skip-result-label">You can skip</div>' +
+      `<div class="skip-result-number">${skip}</div>` +
+      `<div class="skip-result-note">class${skip === 1 ? '' : 'es'} and still stay at or above ${pct}%. You're currently at ${current.toFixed(2)}%.</div>`;
+  } else {
+    const needed = calculateClassesNeeded(attended, total, pct);
+    box.classList.add('short');
+    box.innerHTML =
+      '<div class="skip-result-label">You can skip</div>' +
+      '<div class="skip-result-number">0</div>' +
+      `<div class="skip-result-note">You're at ${current.toFixed(2)}%, below ${pct}%. Attend the next ${needed} class${needed === 1 ? '' : 'es'} in a row to reach it.</div>`;
+  }
+}
+
+/* ---------------- Notes ---------------- */
+
+let notesSaveTimer = null;
+let notesStatusTimer = null;
+
+function loadNotes() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY_NOTES);
+    if (saved !== null) dom.notesTextarea.value = saved;
+  } catch (err) {
+    console.error('Could not load notes:', err);
+  }
+}
+
+function saveNotesDebounced() {
+  clearTimeout(notesSaveTimer);
+  clearTimeout(notesStatusTimer);
+  dom.notesStatus.textContent = 'Saving…';
+  notesSaveTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_NOTES, dom.notesTextarea.value);
+      dom.notesStatus.textContent = 'Saved';
+      notesStatusTimer = setTimeout(() => { dom.notesStatus.textContent = ''; }, 1500);
+    } catch (err) {
+      console.error('Could not save notes:', err);
+      dom.notesStatus.textContent = 'Could not save notes.';
+    }
+  }, 500);
+}
+
 /* ---------------- Actions ---------------- */
 
 function resetToday() {
@@ -615,6 +741,9 @@ function addDailyAttendance() {
 }
 
 function commitDailyAttendance(dateVal, attendedToday, classesHeldToday, replaceId) {
+  const before = getLatestCumulative();
+  const prevKind = before.total > 0 ? statusKindFor(before.attended, before.total, state.target) : null;
+
   if (replaceId) {
     state.history = state.history.filter(r => r.id !== replaceId);
   }
@@ -630,7 +759,18 @@ function commitDailyAttendance(dateVal, attendedToday, classesHeldToday, replace
   renderDashboard();
   renderAttendanceHistory();
   resetToday();
-  showToast(replaceId ? 'Attendance updated for that date.' : "Today's attendance saved.");
+
+  const after = getLatestCumulative();
+  const newKind = statusKindFor(after.attended, after.total, state.target);
+  if (prevKind === 'below' && (newKind === 'exact' || newKind === 'above')) {
+    const skip = calculateClassesCanSkip(after.attended, after.total, state.target);
+    showToast(
+      `🎉 You've reached ${state.target}%! You can skip ${skip} more class${skip === 1 ? '' : 'es'} and stay safe.`,
+      { duration: 7000 }
+    );
+  } else {
+    showToast(replaceId ? 'Attendance updated for that date.' : "Today's attendance saved.");
+  }
 }
 
 function saveSetup() {
@@ -702,12 +842,17 @@ function deleteAttendanceRecord(id) {
   showConfirm(
     `Delete the record for ${isoToDisplay(record.date)}? This will recalculate all later cumulative totals.`,
     () => {
+      const backup = JSON.parse(JSON.stringify(state.history));
       state.history = state.history.filter(r => r.id !== id);
       updateCumulativeAttendance();
       saveToLocalStorage();
       renderDashboard();
       renderAttendanceHistory();
-      showToast('Record deleted.');
+      showToast('Record deleted.', {
+        duration: 7000,
+        actionLabel: 'Undo',
+        onAction: () => restoreHistory(backup, 'Deletion undone.')
+      });
     }
   );
 }
@@ -762,17 +907,31 @@ function editAttendanceRecord() {
   showToast('Record updated.');
 }
 
+function restoreHistory(backup, message) {
+  state.history = backup;
+  updateCumulativeAttendance();
+  saveToLocalStorage();
+  renderDashboard();
+  renderAttendanceHistory();
+  showToast(message);
+}
+
 function clearHistory() {
   if (state.history.length === 0) return;
   showConfirm(
     'Are you sure you want to clear your entire attendance history? This cannot be undone.',
     () => {
+      const backup = JSON.parse(JSON.stringify(state.history));
       state.history = [];
       updateCumulativeAttendance();
       saveToLocalStorage();
       renderDashboard();
       renderAttendanceHistory();
-      showToast('Attendance history cleared.');
+      showToast('Attendance history cleared.', {
+        duration: 7000,
+        actionLabel: 'Undo',
+        onAction: () => restoreHistory(backup, 'History restored.')
+      });
     }
   );
 }
@@ -807,6 +966,15 @@ function wireEvents() {
   dom.clearTimetableBtn.addEventListener('click', clearTimetable);
 
   dom.plannerClasses.addEventListener('input', renderPlanner);
+  dom.skipPctInput.addEventListener('input', renderSkipCalculator);
+
+  dom.notesTextarea.addEventListener('input', saveNotesDebounced);
+
+  dom.printReportBtn.addEventListener('click', () => window.print());
+  window.addEventListener('beforeprint', () => {
+    dom.printMeta.textContent =
+      `Attendance report · generated ${new Date().toLocaleString()} · target ${state.target}%`;
+  });
 
   dom.targetSlider.addEventListener('input', (e) => {
     updateTarget(parseInt(e.target.value, 10));
@@ -879,6 +1047,8 @@ function init() {
     dom.ttFri.value = String(state.timetable.fri);
     dom.ttSat.value = String(state.timetable.sat);
   }
+
+  loadNotes();
 
   wireEvents();
   renderDashboard();

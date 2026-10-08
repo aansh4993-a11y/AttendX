@@ -534,6 +534,14 @@ body {
 }
 .ledger-table-head .note-title { margin: 0; }
 
+.ledger-table-head-actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.print-meta { display: none; }
+
 .empty-state {
   text-align: center;
   padding: 2.5rem 1rem 1.5rem;
@@ -716,13 +724,36 @@ body {
   transform: translateX(-50%) translateY(0);
   background: var(--ink);
   color: var(--card);
-  padding: 0.7rem 1.2rem;
+  padding: 0.7rem 0.8rem 0.7rem 1.2rem;
   border-radius: var(--radius);
   font-size: 0.88rem;
   box-shadow: var(--shadow);
   z-index: 60;
   max-width: calc(100vw - 2.5rem);
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
 }
+
+.toast[hidden] { display: none; }
+
+.toast-message { line-height: 1.4; }
+
+.toast-action {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+  color: var(--card);
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 0.82rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: var(--radius);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.toast-action:hover { border-color: var(--card); }
+.toast-action[hidden] { display: none; }
 
 /* ---------------- Theme toggle ---------------- */
 
@@ -792,4 +823,116 @@ input:focus-visible {
 
 @media (min-width: 641px) and (max-width: 900px) {
   .page-wrap { max-width: 680px; }
+}
+
+/* ---------------- Skip calculator ---------------- */
+
+.skip-calc-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.skip-result {
+  border: 1px solid var(--paper-line);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.15rem;
+  min-height: 118px;
+}
+.skip-result.ok { border-left-color: var(--green); }
+.skip-result.short { border-left-color: var(--red); }
+
+.skip-result-label { font-size: 0.76rem; color: var(--ink-soft); }
+
+.skip-result-number {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 2.5rem;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.skip-result.ok .skip-result-number { color: var(--green); }
+.skip-result.short .skip-result-number { color: var(--red); }
+
+.skip-result-note { font-size: 0.85rem; color: var(--ink-soft); line-height: 1.5; }
+
+@media (max-width: 640px) {
+  .skip-calc-layout { grid-template-columns: 1fr; }
+}
+
+/* ---------------- Notes ---------------- */
+
+.notes-textarea {
+  width: 100%;
+  min-height: 160px;
+  padding: 0.85rem 0.95rem;
+  border: 1.5px solid var(--paper-line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  resize: vertical;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.notes-textarea:focus-visible {
+  outline: none;
+  border-color: var(--margin);
+  background: var(--card);
+}
+.notes-meta { min-height: 1.2em; margin-top: 0.5rem; }
+.notes-status { font-size: 0.78rem; color: var(--ink-faint); }
+
+/* ---------------- Print ---------------- */
+
+@media print {
+  body { background: #fff !important; color: #111; }
+
+  .theme-toggle, .target-control, .progress-track, .progress-scale,
+  #setup-card, #timetable-card, #planner-card, #skip-calc-card, #heatmap-card,
+  .masthead-top, .punch-holes, .btn, .field-error, .row-actions,
+  .no-print-col, .toast, .modal-overlay {
+    display: none !important;
+  }
+
+  .page-wrap { max-width: 100%; padding: 0.5rem 0; }
+  .masthead-title { font-size: 1.6rem; }
+  .masthead-sub { color: #333; }
+
+  .ledger-card, .note-card, .ledger-table-card {
+    background: #fff;
+    border: 1px solid #999;
+    box-shadow: none;
+    break-inside: avoid;
+    margin-bottom: 1rem;
+  }
+  .ledger-card::before { display: none; }
+
+  .status-chip, .status-pill {
+    border: 1px solid #999;
+    background: #fff !important;
+    color: #111 !important;
+  }
+
+  .print-meta {
+    display: block !important;
+    font-size: 0.78rem;
+    color: #555;
+    margin: 0.2rem 0 1rem;
+  }
+
+  .history-table { min-width: 0; }
+  .table-scroll { overflow: visible; }
+  .history-table th, .history-table td { color: #111; border-bottom: 1px solid #ccc; }
+
+  .notes-textarea { border: 1px solid #999; background: #fff; color: #111; }
 }
